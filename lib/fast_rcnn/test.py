@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------
 # Fast R-CNN
 # Copyright (c) 2015 Microsoft
@@ -33,7 +34,7 @@ def _get_image_blob(im):
     im_orig = im.astype(np.float32, copy=True)
     im_orig -= cfg.PIXEL_MEANS
 
-    im_shape = im_orig.shape
+    im_shape = im_orig.shape #e.g. (480,640,3)
     im_size_min = np.min(im_shape[0:2])
     im_size_max = np.max(im_shape[0:2])
 
@@ -45,11 +46,12 @@ def _get_image_blob(im):
         # Prevent the biggest axis from being more than MAX_SIZE
         if np.round(im_scale * im_size_max) > cfg.TEST.MAX_SIZE:
             im_scale = float(cfg.TEST.MAX_SIZE) / float(im_size_max)
+        # 例如:(577, 1025, 3) --> (563, 1000, 3)
+        # 同比例变化im_orig的height和width
         im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale,
                         interpolation=cv2.INTER_LINEAR)
         im_scale_factors.append(im_scale)
         processed_ims.append(im)
-
     # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims)
 
@@ -253,9 +255,10 @@ def test_net(net, imdb, max_per_image=100, thresh=0.05, vis=False):
             # ground truth.
             box_proposals = roidb[i]['boxes'][roidb[i]['gt_classes'] == 0]
 
-        im = cv2.imread(imdb.image_path_at(i))
+        im = cv2.imread(imdb.image_path_at(i)) #原始图片
         _t['im_detect'].tic()
         scores, boxes = im_detect(net, im, box_proposals)
+        #print(scores, boxes)
         _t['im_detect'].toc()
 
         _t['misc'].tic()
@@ -271,7 +274,7 @@ def test_net(net, imdb, max_per_image=100, thresh=0.05, vis=False):
             if vis:
                 vis_detections(im, imdb.classes[j], cls_dets)
             all_boxes[j][i] = cls_dets
-
+        
         # Limit to max_per_image detections *over all classes*
         if max_per_image > 0:
             image_scores = np.hstack([all_boxes[j][i][:, -1]

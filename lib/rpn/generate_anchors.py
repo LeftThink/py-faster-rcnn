@@ -51,7 +51,6 @@ def _whctrs(anchor):
     """
     Return width, height, x center, and y center for an anchor (window).
     """
-
     w = anchor[2] - anchor[0] + 1
     h = anchor[3] - anchor[1] + 1
     x_ctr = anchor[0] + 0.5 * (w - 1)
@@ -99,7 +98,8 @@ def _scale_enum(anchor, scales):
 if __name__ == '__main__':
     import time
     t = time.time()
-    a = generate_anchors()
-    print time.time() - t
-    print a
+    a = generate_anchors(base_size=8, ratios=[0.3, 0.4, 0.5, 1.], scales=np.array([1,2,4,8,16,32]))
+    #a = generate_anchors()
+    print(time.time() - t)
+    print(a+256)
     from IPython import embed; embed()

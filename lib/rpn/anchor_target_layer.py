@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------
 # Faster R-CNN
 # Copyright (c) 2015 Microsoft
@@ -15,7 +16,7 @@ from generate_anchors import generate_anchors
 from utils.cython_bbox import bbox_overlaps
 from fast_rcnn.bbox_transform import bbox_transform
 
-DEBUG = False
+DEBUG = True
 
 class AnchorTargetLayer(caffe.Layer):
     """
@@ -25,8 +26,11 @@ class AnchorTargetLayer(caffe.Layer):
 
     def setup(self, bottom, top):
         layer_params = yaml.load(self.param_str_)
-        anchor_scales = layer_params.get('scales', (8, 16, 32))
-        self._anchors = generate_anchors(scales=np.array(anchor_scales))
+        anchor_scales = np.array(cfg.TRAIN.ANCHOR_SCALES)
+        anchor_ratios = np.array(cfg.TRAIN.ANCHOR_RATIOS)
+        base_size = cfg.TRAIN.BASE_SIZE 
+        self._anchors = generate_anchors(base_size=base_size, 
+            ratios=anchor_ratios, scales=anchor_scales)
         self._num_anchors = self._anchors.shape[0]
         self._feat_stride = layer_params['feat_stride']
 
@@ -124,15 +128,15 @@ class AnchorTargetLayer(caffe.Layer):
             print 'anchors.shape', anchors.shape
 
         # label: 1 is positive, 0 is negative, -1 is dont care
-        labels = np.empty((len(inds_inside), ), dtype=np.float32)
-        labels.fill(-1)
+        labels = np.empty((len(inds_inside), ), dtype=np.float32) #一维
+        labels.fill(-1) #全部置为初始值-1
 
         # overlaps between the anchors and the gt boxes
         # overlaps (ex, gt)
         overlaps = bbox_overlaps(
             np.ascontiguousarray(anchors, dtype=np.float),
             np.ascontiguousarray(gt_boxes, dtype=np.float))
-        argmax_overlaps = overlaps.argmax(axis=1)
+        argmax_overlaps = overlaps.argmax(axis=1) # 取最大值索引
         max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
         gt_argmax_overlaps = overlaps.argmax(axis=0)
         gt_max_overlaps = overlaps[gt_argmax_overlaps,
@@ -141,8 +145,9 @@ class AnchorTargetLayer(caffe.Layer):
 
         if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
             # assign bg labels first so that positive labels can clobber them
-            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
+            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0 
 
+        # 两种情况下的anchor为positive
         # fg label: for each gt, anchor with highest overlap
         labels[gt_argmax_overlaps] = 1
 
@@ -154,12 +159,14 @@ class AnchorTargetLayer(caffe.Layer):
             labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
         # subsample positive labels if we have too many
+        # default, 0.5 * 256, 因为论文中所说的anchor的正负比例为1:1
         num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)
         fg_inds = np.where(labels == 1)[0]
+        # 如果fg多了就要丢弃一些
         if len(fg_inds) > num_fg:
             disable_inds = npr.choice(
                 fg_inds, size=(len(fg_inds) - num_fg), replace=False)
-            labels[disable_inds] = -1
+            labels[disable_inds] = -1 # 丢弃的置为-1
 
         # subsample negative labels if we have too many
         num_bg = cfg.TRAIN.RPN_BATCHSIZE - np.sum(labels == 1)
@@ -220,7 +227,7 @@ class AnchorTargetLayer(caffe.Layer):
             print 'rpn: num_positive avg', self._fg_sum / self._count
             print 'rpn: num_negative avg', self._bg_sum / self._count
 
-        # labels
+        # labels, rpn-labels也就是从rpn的角度分出来的fg,bg
         labels = labels.reshape((1, height, width, A)).transpose(0, 3, 1, 2)
         labels = labels.reshape((1, 1, A * height, width))
         top[0].reshape(*labels.shape)

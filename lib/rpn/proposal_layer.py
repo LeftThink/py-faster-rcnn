@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------
 # Faster R-CNN
 # Copyright (c) 2015 Microsoft
@@ -26,14 +27,16 @@ class ProposalLayer(caffe.Layer):
         layer_params = yaml.load(self.param_str_)
 
         self._feat_stride = layer_params['feat_stride']
-        anchor_scales = layer_params.get('scales', (8, 16, 32))
-        self._anchors = generate_anchors(scales=np.array(anchor_scales))
+        base_size = cfg.TRAIN.BASE_SIZE 
+        anchor_scales = np.array(cfg.TRAIN.ANCHOR_SCALES)
+        anchor_ratios = np.array(cfg.TRAIN.ANCHOR_RATIOS)
+        self._anchors = generate_anchors(base_size=base_size,
+            ratios=anchor_ratios, scales=anchor_scales)
         self._num_anchors = self._anchors.shape[0]
 
         if DEBUG:
             print 'feat_stride: {}'.format(self._feat_stride)
-            print 'anchors:'
-            print self._anchors
+            print 'anchors:'.format(self._anchors)
 
         # rois blob: holds R regions of interest, each is a 5-tuple
         # (n, x1, y1, x2, y2) specifying an image batch index n and a
@@ -63,15 +66,17 @@ class ProposalLayer(caffe.Layer):
 
         cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
         pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
-        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
-        nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
-        min_size      = cfg[cfg_key].RPN_MIN_SIZE
+        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N #2000?
+        nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH #0.7?
+        # Proposal height and width both need to be greater than RPN_MIN_SIZE
+        min_size      = cfg[cfg_key].RPN_MIN_SIZE #16??
 
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs, which we want
-        scores = bottom[0].data[:, self._num_anchors:, :, :]
+        scores = bottom[0].data[:, self._num_anchors:, :, :] #只需要取前景score,因为会按前景score排序
+        #print('scores: ', scores[:,:, 0,0])
         bbox_deltas = bottom[1].data
-        im_info = bottom[2].data[0, :]
+        im_info = bottom[2].data[0, :] #就是携带了图片的size??maybe!
 
         if DEBUG:
             print 'im_size: ({}, {})'.format(im_info[0], im_info[1])
@@ -82,6 +87,7 @@ class ProposalLayer(caffe.Layer):
 
         if DEBUG:
             print 'score map size: {}'.format(scores.shape)
+            #print(scores)
 
         # Enumerate all shifts
         shift_x = np.arange(0, width) * self._feat_stride
@@ -118,6 +124,7 @@ class ProposalLayer(caffe.Layer):
         # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
         scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
 
+        # 相当于是要做decode得到真实坐标?因为rpn_bbox_pred出来的是相对于anchor的偏置
         # Convert anchors into proposals via bbox transformations
         proposals = bbox_transform_inv(anchors, bbox_deltas)
 
@@ -127,11 +134,13 @@ class ProposalLayer(caffe.Layer):
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
         keep = _filter_boxes(proposals, min_size * im_info[2])
+        # print('keep shape:', keep.shape)
         proposals = proposals[keep, :]
         scores = scores[keep]
 
         # 4. sort all (proposal, score) pairs by score from highest to lowest
         # 5. take top pre_nms_topN (e.g. 6000)
+        # ravel类似flatten,squeeze可以将多维数组转换为一维数组
         order = scores.ravel().argsort()[::-1]
         if pre_nms_topN > 0:
             order = order[:pre_nms_topN]
@@ -142,6 +151,8 @@ class ProposalLayer(caffe.Layer):
         # 7. take after_nms_topN (e.g. 300)
         # 8. return the top proposals (-> RoIs top)
         keep = nms(np.hstack((proposals, scores)), nms_thresh)
+        print('nms keep shape:', len(keep))
+
         if post_nms_topN > 0:
             keep = keep[:post_nms_topN]
         proposals = proposals[keep, :]

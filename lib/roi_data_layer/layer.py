@@ -81,8 +81,20 @@ class RoIDataLayer(caffe.Layer):
             atexit.register(cleanup)
 
     def setup(self, bottom, top):
-        """Setup the RoIDataLayer."""
-
+        """Setup the RoIDataLayer.
+        layer {
+          name: 'input-data'
+          type: 'Python'
+          top: 'data'
+          top: 'im_info'
+          top: 'gt_boxes'
+          python_param {
+            module: 'roi_data_layer.layer'
+            layer: 'RoIDataLayer'
+            param_str: "'num_classes': 2"
+          }
+        }
+        """
         # parse the layer parameter string, which must be valid YAML
         layer_params = yaml.load(self.param_str_)
 
@@ -93,7 +105,7 @@ class RoIDataLayer(caffe.Layer):
         # data blob: holds a batch of N images, each with 3 channels
         idx = 0
         top[idx].reshape(cfg.TRAIN.IMS_PER_BATCH, 3,
-            max(cfg.TRAIN.SCALES), cfg.TRAIN.MAX_SIZE)
+            max(cfg.TRAIN.SCALES), cfg.TRAIN.MAX_SIZE) #e.g. (1,3,600,1000)
         self._name_to_top_map['data'] = idx
         idx += 1
 

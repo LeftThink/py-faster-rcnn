@@ -12,6 +12,8 @@ from fast_rcnn.config import cfg
 from fast_rcnn.bbox_transform import bbox_transform
 from utils.cython_bbox import bbox_overlaps
 import PIL
+import pickle 
+import os 
 
 def prepare_roidb(imdb):
     """Enrich the imdb's roidb by adding some derived quantities that
@@ -20,13 +22,27 @@ def prepare_roidb(imdb):
     each ground-truth box. The class with maximum overlap is also
     recorded.
     """
-    sizes = [PIL.Image.open(imdb.image_path_at(i)).size
-             for i in xrange(imdb.num_images)]
+    sizes_pkl = "sizes.pkl"
+    if os.path.exists(sizes_pkl):
+        print 'sizes cache {}'.format(sizes_pkl)
+        with open(sizes_pkl, 'rb') as fb:
+            sizes = pickle.load(fb)
+    else:
+        # too slowly
+        sizes = [PIL.Image.open(imdb.image_path_at(i)).size
+                 for i in xrange(imdb.num_images)]
+        with open(sizes_pkl, 'wb') as fb:
+            pickle.dump(sizes, fb)
+    print 'loaded sizes'
+
     roidb = imdb.roidb
     for i in xrange(len(imdb.image_index)):
         roidb[i]['image'] = imdb.image_path_at(i)
         roidb[i]['width'] = sizes[i][0]
         roidb[i]['height'] = sizes[i][1]
+        if i%50000 == 0: 
+            print('{}/{}'.format(i,len(imdb.image_index)))
+            print(roidb[i])
         # need gt_overlaps as a dense array for argmax
         gt_overlaps = roidb[i]['gt_overlaps'].toarray()
         # max overlap with gt over classes (columns)

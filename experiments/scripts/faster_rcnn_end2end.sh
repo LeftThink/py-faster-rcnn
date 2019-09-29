@@ -14,7 +14,6 @@ export PYTHONUNBUFFERED="True"
 
 GPU_ID=$1
 NET=$2
-NET_lc=${NET,,}
 DATASET=$3
 
 array=( $@ )
@@ -38,6 +37,12 @@ case $DATASET in
     PT_DIR="coco"
     ITERS=490000
     ;;
+  adasplus_ped)
+    TRAIN_IMDB="ped_2019_train"
+    TEST_IMDB="ped_2019_val"
+    PT_DIR="adasplus_ped"
+    ITERS=500000
+    ;;
   *)
     echo "No dataset given"
     exit
@@ -50,19 +55,15 @@ echo Logging output to "$LOG"
 
 time ./tools/train_net.py --gpu ${GPU_ID} \
   --solver models/${PT_DIR}/${NET}/faster_rcnn_end2end/solver.prototxt \
-  --weights data/imagenet_models/${NET}.v2.caffemodel \
   --imdb ${TRAIN_IMDB} \
   --iters ${ITERS} \
   --cfg experiments/cfgs/faster_rcnn_end2end.yml \
+  --weights output/faster_rcnn_end2end/ped_2019_train/vgg16_faster_rcnn_ped_F8A4S6_0925_01_iter_103000.caffemodel \
   ${EXTRA_ARGS}
-
-set +x
-NET_FINAL=`grep -B 1 "done solving" ${LOG} | grep "Wrote snapshot" | awk '{print $4}'`
-set -x
 
 time ./tools/test_net.py --gpu ${GPU_ID} \
   --def models/${PT_DIR}/${NET}/faster_rcnn_end2end/test.prototxt \
-  --net ${NET_FINAL} \
+  --net output/faster_rcnn_end2end/ped_2019_train/vgg16_faster_rcnn_ped_F8A4S6_0925_01_iter_103000.caffemodel \
   --imdb ${TEST_IMDB} \
   --cfg experiments/cfgs/faster_rcnn_end2end.yml \
   ${EXTRA_ARGS}
