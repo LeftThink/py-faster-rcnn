@@ -16,7 +16,7 @@ from generate_anchors import generate_anchors
 from utils.cython_bbox import bbox_overlaps
 from fast_rcnn.bbox_transform import bbox_transform
 
-DEBUG = True
+DEBUG = False
 
 class AnchorTargetLayer(caffe.Layer):
     """
@@ -129,20 +129,38 @@ class AnchorTargetLayer(caffe.Layer):
 
         # label: 1 is positive, 0 is negative, -1 is dont care
         labels = np.empty((len(inds_inside), ), dtype=np.float32) #一维
-        labels.fill(-1) #全部置为初始值-1
+        labels.fill(-1) #全部置为初始值-1,这两步难道不能一步到位么?
 
         # overlaps between the anchors and the gt boxes
         # overlaps (ex, gt)
+        # 这里的gt_boxes是真的gt?是的!这就是就是来确定anchor的正负
         overlaps = bbox_overlaps(
             np.ascontiguousarray(anchors, dtype=np.float),
             np.ascontiguousarray(gt_boxes, dtype=np.float))
+        """
+        这样?
+            gt0  gt1 gt2 gt3 ...
+        a0  0.2  0.3 0.1 0.7 ... 
+        a1
+        a2 
+        """
         argmax_overlaps = overlaps.argmax(axis=1) # 取最大值索引
+        #取每个anchor对应的最大iou的值
         max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
+        #上面是1-anchor对多-gt,这里是1-gt对多anchor
         gt_argmax_overlaps = overlaps.argmax(axis=0)
+        # 相当于通[i,j]来对二维矩阵进行索引取值
         gt_max_overlaps = overlaps[gt_argmax_overlaps,
                                    np.arange(overlaps.shape[1])]
+        #得到(array([x0,x1,..],array([y0,y1,..]))
         gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
-
+        
+        """
+        注意,在默认设置中这里确定ANCHOR的正负所用的阈值并不是连续的,
+        例如RPN_POSITIVE_OVERLAP等于0.5,而RPN_NEGATIVE_OVERLAP等于0.3,
+        那么中间必然出现一段真空区域,在这个区域内的ANCHOR自然也就是-1,
+        会被丢弃!
+        """
         if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
             # assign bg labels first so that positive labels can clobber them
             labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0 

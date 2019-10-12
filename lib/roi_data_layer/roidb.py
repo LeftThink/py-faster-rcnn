@@ -42,7 +42,7 @@ def prepare_roidb(imdb):
         roidb[i]['height'] = sizes[i][1]
         if i%50000 == 0: 
             print('{}/{}'.format(i,len(imdb.image_index)))
-            print(roidb[i])
+            #print(roidb[i])
         # need gt_overlaps as a dense array for argmax
         gt_overlaps = roidb[i]['gt_overlaps'].toarray()
         # max overlap with gt over classes (columns)

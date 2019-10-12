@@ -14,7 +14,7 @@ from fast_rcnn.config import cfg
 from fast_rcnn.bbox_transform import bbox_transform
 from utils.cython_bbox import bbox_overlaps
 
-DEBUG = True
+DEBUG = False
 
 class ProposalTargetLayer(caffe.Layer):
     """
@@ -47,6 +47,7 @@ class ProposalTargetLayer(caffe.Layer):
 
         # Include ground-truth boxes in the set of candidate rois
         zeros = np.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
+        # 这一操作很关键,干啥的呢?
         all_rois = np.vstack(
             (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
         )
@@ -54,7 +55,12 @@ class ProposalTargetLayer(caffe.Layer):
         # Sanity check: single batch only
         assert np.all(all_rois[:, 0] == 0), \
                 'Only single item batches are supported'
-
+        
+        """
+        摘自论文中的一段话,we randomly sample 256 anchors in an image to compute the loss function of a
+        mini-batch,where the sampled positive and negative anchors have a ratio of up to 1:1, if there
+        are fewer than 128 positive samples in an image,we pad the mini-batch with negative ones.
+        """
         num_images = 1
         rois_per_image = cfg.TRAIN.BATCH_SIZE / num_images
         fg_rois_per_image = np.round(cfg.TRAIN.FG_FRACTION * rois_per_image) #属于前景的roi的数量
@@ -156,17 +162,32 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     # 计算IoU这一步很关键,关系到后面的fg和bg
     overlaps = bbox_overlaps(
         np.ascontiguousarray(all_rois[:, 1:5], dtype=np.float),
-        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))
+        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float)) 
     
+    """
+              0,1,2,3 --> gt index
+    roi index x x x x 
+         0
+         1
+         .    
+    """    
     #print(all_rois.shape, gt_boxes.shape)
     #print(all_rois)
-
-    gt_assignment = overlaps.argmax(axis=1)
+    """
+    e.g. 
+    gt_assignment.shape --> (710,)
+    overlaps.shape ---> (710,4)
+    max_overlaps.shape --> (710,)
+    labels.shape --> (710,4)
+    """
+    gt_assignment = overlaps.argmax(axis=1) #gt assignment to roi, e.g. [0,1,1,0,2,2,0,0]
     max_overlaps = overlaps.max(axis=1)
-    labels = gt_boxes[gt_assignment, 4]
+    labels = gt_boxes[gt_assignment, 4] 
+
+    #print(overlaps.shape, gt_assignment.shape, gt_assignment) 
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
-    fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
+    fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0] #rois index
     # Guard against the case when an image has fewer than fg_rois_per_image
     # foreground RoIs
     # 反正不能比设定的fg_rois_per_image多
@@ -191,7 +212,8 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     # Select sampled values from various arrays:
     labels = labels[keep_inds]
     # Clamp labels for the background RoIs to 0
-    labels[fg_rois_per_this_image:] = 0
+    # 注意labels里面存的是分类的类别
+    labels[fg_rois_per_this_image:] = 0 #notice because fg_rois_per_this_image: is bg
     rois = all_rois[keep_inds]
 
     bbox_target_data = _compute_targets(

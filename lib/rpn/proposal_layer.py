@@ -27,7 +27,7 @@ class ProposalLayer(caffe.Layer):
         layer_params = yaml.load(self.param_str_)
 
         self._feat_stride = layer_params['feat_stride']
-        base_size = cfg.TRAIN.BASE_SIZE 
+        base_size = cfg.TRAIN.BASE_SIZE                         
         anchor_scales = np.array(cfg.TRAIN.ANCHOR_SCALES)
         anchor_ratios = np.array(cfg.TRAIN.ANCHOR_RATIOS)
         self._anchors = generate_anchors(base_size=base_size,
@@ -65,8 +65,8 @@ class ProposalLayer(caffe.Layer):
             'Only single item batches are supported'
 
         cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
-        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
-        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N #2000?
+        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N  #default 12000
+        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N #default 2000
         nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH #0.7?
         # Proposal height and width both need to be greater than RPN_MIN_SIZE
         min_size      = cfg[cfg_key].RPN_MIN_SIZE #16??
@@ -106,6 +106,8 @@ class ProposalLayer(caffe.Layer):
         K = shifts.shape[0]
         anchors = self._anchors.reshape((1, A, 4)) + \
                   shifts.reshape((1, K, 4)).transpose((1, 0, 2))
+
+        # 此时anchors reshape成了N * 4,而N=W*H*K
         anchors = anchors.reshape((K * A, 4))
 
         # Transpose and reshape predicted bbox transformations to get them
@@ -131,6 +133,7 @@ class ProposalLayer(caffe.Layer):
         # 2. clip predicted boxes to image
         proposals = clip_boxes(proposals, im_info[:2])
 
+        # 移除宽和高小于阈值的box,阈值怎么定?
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
         keep = _filter_boxes(proposals, min_size * im_info[2])
@@ -151,18 +154,29 @@ class ProposalLayer(caffe.Layer):
         # 7. take after_nms_topN (e.g. 300)
         # 8. return the top proposals (-> RoIs top)
         keep = nms(np.hstack((proposals, scores)), nms_thresh)
-        print('nms keep shape:', len(keep))
+        # print('after nms keep shape:', len(keep))
 
+        # nms之后最多还保留post_nms_topN个proposal
         if post_nms_topN > 0:
             keep = keep[:post_nms_topN]
+        # print('topn nms keep shape:', len(keep))
         proposals = proposals[keep, :]
         scores = scores[keep]
+        
+        #print(scores, proposals)
 
         # Output rois blob
         # Our RPN implementation only supports a single input image, so all
         # batch inds are 0
         batch_inds = np.zeros((proposals.shape[0], 1), dtype=np.float32)
         blob = np.hstack((batch_inds, proposals.astype(np.float32, copy=False)))
+        """
+        e.g. blob, yes or not? 
+        [
+            [0,x,x,x,x],
+            [0,x,x,x,x],
+        ...]
+        """ 
         top[0].reshape(*(blob.shape))
         top[0].data[...] = blob
 

@@ -80,6 +80,7 @@ if __name__ == '__main__':
     caffe.set_mode_gpu()
     caffe.set_device(args.gpu_id)
     net = caffe.Net(args.prototxt, args.caffemodel, caffe.TEST)
+
     net.name = os.path.splitext(os.path.basename(args.caffemodel))[0]
 
     imdb = get_imdb(args.imdb_name)
